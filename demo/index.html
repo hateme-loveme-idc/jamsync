@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>jamsync demo</title>
+<style>
+  body{font:16px/1.5 system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 20px;background:#0c0e13;color:#ece6da}
+  h1{font-weight:600;letter-spacing:-.02em} small{color:#a19b90}
+  button{font:inherit;padding:10px 16px;border-radius:999px;border:1px solid #333a48;background:#151922;color:inherit;cursor:pointer;margin:4px 4px 4px 0}
+  button.primary{background:#d9607a;color:#14070b;border-color:#d9607a;font-weight:600}
+  audio{width:100%;margin:16px 0}
+  .stat{font:13px ui-monospace,monospace;background:#151922;border-radius:12px;padding:12px 14px;white-space:pre}
+  input{font:inherit;padding:8px 12px;border-radius:10px;border:1px solid #333a48;background:#0c0e13;color:inherit}
+</style>
+</head>
+<body>
+<h1>jamsync demo</h1>
+<p><small>Open this page on two or more devices. One taps <b>Start</b>, the others tap <b>Join</b>.
+The tracks beep once per second, so you can hear when devices are in step.</small></p>
+<p>Your name: <input id="who" value="guest"></p>
+<button class="primary" id="start">Start a Jam</button><button id="join">Join</button><button id="leave">Leave</button>
+<button id="next">Next track</button>
+<audio id="a" controls preload="auto"></audio>
+<div class="stat" id="stat">not connected</div>
+<script type="module">
+import { JamSync } from '/client/jamsync.js';
+const a = document.getElementById('a'), $ = id => document.getElementById(id);
+const tracks = ['track-440', 'track-660'];
+let jam;
+function make() {
+  jam?.leave();
+  jam = new JamSync({
+    media: a, baseUrl: '/jam', headers: { 'X-User': $('who').value || 'guest' },
+    loadTrack: async id => { a.src = `/demo-media/${id}.mp3`; await new Promise(r => a.addEventListener('loadedmetadata', r, { once: true })); },
+    onNeedTap: () => alert('Tap play to hear the Jam on this device (browser autoplay rule).'),
+  });
+  return jam;
+}
+$('start').onclick = async () => { const j = make(); a.src = `/demo-media/${tracks[0]}.mp3`; j.userAction(); await j.start(tracks[0]); };
+$('join').onclick = async () => { try { await make().join(); } catch (e) { alert('No Jam running: start one first'); } };
+$('leave').onclick = () => jam?.leave();
+$('next').onclick = () => { if (!jam?.trackId) return; const n = tracks[(tracks.indexOf(jam.trackId) + 1) % tracks.length];
+  jam.userAction(); a.src = `/demo-media/${n}.mp3`; a.play(); jam.changeTrack(n); };
+// taps/keys on the player are the user's own actions; everything else is the library following the room
+for (const ev of ['pointerdown', 'keydown']) a.addEventListener(ev, () => jam?.userAction());
+setInterval(() => {
+  if (!jam?.state) return;
+  const s = jam.state, d = jam.state.active && s.playing ? (a.currentTime - jam.roomPosition()) * 1000 : 0;
+  $('stat').textContent = `room: ${s.active ? 'active' : 'none'}  host: ${s.host || '-'}  members: ${(s.members || []).join(', ')}
+track: ${s.track_id || '-'}  ${s.playing ? 'playing' : 'paused'}  version: ${s.version}
+clock offset: ${jam.skew.toFixed(0)} ms   round trip: ${jam.rtt.toFixed(0)} ms
+this device vs room: ${d >= 0 ? '+' : ''}${d.toFixed(0)} ms   speed: ${a.playbackRate.toFixed(3)}x`;
+}, 250);
+</script>
+</body>
+</html>
